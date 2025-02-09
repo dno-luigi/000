@@ -21,6 +21,26 @@ const menuButton = document.getElementById('menuButton');
     let responseInstructions = '';
     let aiSpeechEnabled = true;
     let isDarkMode = false;
+    let currentUtterance = null; // Variable to hold the current utterance
+
+    // Function to create a button element
+    function createButton(innerHTML, onClick) {
+      const button = document.createElement('button');
+      button.innerHTML = innerHTML;
+      button.style.marginLeft = '10px';
+      button.addEventListener('click', onClick);
+      return button;
+    }
+
+    // Function to sanitize text for speech synthesis
+    function sanitizeTextForSpeech(text) {
+      // Replace markdown formatting with spoken equivalents
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold formatting
+        .replace(/\*(.*?)\*/g, '$1') // Remove italic formatting
+        .replace(/`(.*?)`/g, '$1') // Remove inline code formatting
+        .replace(/```(.*?)```/g, 'Here is the code: $1'); // Handle code blocks
+    }
 
     // Initialize speech recognition if supported
     function initializeSpeechRecognition() {
@@ -92,7 +112,7 @@ const menuButton = document.getElementById('menuButton');
           const aiMessageContent = await fetchAIResponse(message);
           appendAIMessage(aiMessageContent);
         } catch (error) {
-          appendErrorMessage(error.message);
+          appendErrorMessage(error.message); // Use the existing error handling function
         } finally {
           conversation.removeChild(typingElement);
         }
@@ -135,22 +155,49 @@ const menuButton = document.getElementById('menuButton');
       });
 
       const data = await response.json();
-      return data.choices[0].message.content.trim();
+      if (data && data.choices && data.choices.length > 0) {
+        return data.choices[0].message.content.trim();
+      } else {
+        throw new Error('Invalid response from API');
+      }
     }
 
     // Append AI message to the conversation
     function appendAIMessage(aiMessageContent) {
       const aiMessageElement = document.createElement('div');
       aiMessageElement.classList.add('message', 'ai-message');
-      aiMessageElement.innerHTML = marked.parse(aiMessageContent);
+
+      // Create a code block if the content is a code block
+      if (aiMessageContent.startsWith('```') && aiMessageContent.endsWith('```')) {
+        const codeContent = aiMessageContent.slice(3, -3).trim(); // Remove the ``` markers
+        const codeBlock = document.createElement('pre');
+        codeBlock.classList.add('code-block');
+        codeBlock.style.backgroundColor = 'black'; // Set background color for code block
+        codeBlock.textContent = codeContent;
+
+        // Add copy button to the code block
+        const copyButton = createButton('Copy', () => {
+          navigator.clipboard.writeText(codeContent).then(() => {
+            alert('Code copied to clipboard');
+          });
+        });
+        codeBlock.appendChild(copyButton);
+        aiMessageElement.appendChild(codeBlock);
+      } else {
+        aiMessageElement.innerHTML = marked.parse(aiMessageContent);
+      }
+
       addMessageButtons(aiMessageElement, aiMessageContent);
       conversation.appendChild(aiMessageElement);
       conversation.scrollTop = conversation.scrollHeight;
 
       if (aiSpeechEnabled) {
-        const utterance = new SpeechSynthesisUtterance(aiMessageContent);
-        utterance.lang = 'en-US';
-        speechSynthesis.speak(utterance);
+        if (currentUtterance) {
+          speechSynthesis.cancel(); // Stop any ongoing speech
+        }
+        currentUtterance = new SpeechSynthesisUtterance(sanitizeTextForSpeech(aiMessageContent));
+        currentUtterance.lang = 'en-US';
+        speechSynthesis.speak(currentUtterance);
       }
     }
 
@@ -166,9 +213,12 @@ const menuButton = document.getElementById('menuButton');
       });
 
       const speakButton = createButton('<i class="fas fa-volume-up"></i>', () => {
-        const utterance = new SpeechSynthesisUtterance(aiMessageContent);
-        utterance.lang = 'en-US';
-        speechSynthesis.speak(utterance);
+        if (currentUtterance) {
+          speechSynthesis.cancel(); // Stop any ongoing speech
+        }
+        currentUtterance = new SpeechSynthesisUtterance(sanitizeTextForSpeech(aiMessageContent));
+        currentUtterance.lang = 'en-US';
+        speechSynthesis.speak(currentUtterance);
       });
 
       const deleteButton = createButton('<i class="fas fa-trash"></i>', () => {
@@ -179,15 +229,6 @@ const menuButton = document.getElementById('menuButton');
       buttonContainer.appendChild(speakButton);
       buttonContainer.appendChild(deleteButton);
       aiMessageElement.appendChild(buttonContainer);
-    }
-
-    // Create a button element
-    function createButton(innerHTML, onClick) {
-      const button = document.createElement('button');
-      button.innerHTML = innerHTML;
-      button.style.marginLeft = '10px';
-      button.addEventListener('click', onClick);
-      return button;
     }
 
     // Append error message to the conversation
@@ -216,6 +257,7 @@ const menuButton = document.getElementById('menuButton');
       userInfo = userInfoInput.value;
       responseInstructions = responseInstructionsInput.value;
       aiSpeechEnabled = aiSpeechToggle.checked;
+      apiKeyInput.style.display = 'none'; // Hide API key input after saving
       saveSettingsToLocalStorage();
       applet.classList.remove('open');
     });
@@ -230,6 +272,7 @@ const menuButton = document.getElementById('menuButton');
       } else if (aiSpeechEnabled && 'webkitSpeechRecognition' in window) {
         recognition.start();
       }
+      speechSynthesis.cancel(); // Interrupt any ongoing speech when the button is clicked
     });
 
     messageInput.addEventListener('keydown', (event) => {
