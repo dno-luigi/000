@@ -1,112 +1,122 @@
 const menuButton = document.getElementById('menuButton');
-const talkButton = document.getElementById('talkButton');
-const messageInput = document.getElementById('messageInput');
-const conversation = document.getElementById('conversation');
-const applet = document.getElementById('applet');
-const closeSettings = document.getElementById('closeSettings');
-const saveSettings = document.getElementById('saveSettings');
-const modelSelect = document.getElementById('modelSelect');
-const apiKeyInput = document.getElementById('apiKeyInput');
-const userInfoInput = document.getElementById('userInfoInput');
-const responseInstructionsInput = document.getElementById('responseInstructionsInput');
-const aiSpeechToggle = document.getElementById('aiSpeechToggle');
-const toggleMode = document.getElementById('toggleMode');
+    const talkButton = document.getElementById('talkButton');
+    const messageInput = document.getElementById('messageInput');
+    const conversation = document.getElementById('conversation');
+    const applet = document.getElementById('applet');
+    const closeSettings = document.getElementById('closeSettings');
+    const saveSettings = document.getElementById('saveSettings');
+    const favoriteModelSelect = document.getElementById('favoriteModelSelect');
+    const manualModelInput = document.getElementById('manualModelInput');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const userInfoInput = document.getElementById('userInfoInput');
+    const responseInstructionsInput = document.getElementById('responseInstructionsInput');
+    const aiSpeechToggle = document.getElementById('aiSpeechToggle');
+    const toggleMode = document.getElementById('toggleMode');
 
-let recognizing = false;
-let recognition;
-let currentUtterance = null;
-let selectedModel = 'deepseek/deepseek-r1-distill-llama-70b';
-let apiKey = '';
-let userInfo = '';
-let responseInstructions = '';
-let aiSpeechEnabled = true;
-let isDarkMode = true;
+    let recognizing = false;
+    let recognition;
+    let selectedModel = 'google/gemini-2.0-flash-lite-preview-02-05:free';
+    let apiKey = '';
+    let userInfo = '';
+    let responseInstructions = '';
+    let aiSpeechEnabled = true;
+    let isDarkMode = false;
 
-if ('webkitSpeechRecognition' in window) {
-  recognition = new webkitSpeechRecognition();
-  recognition.continuous = false;
-  recognition.interimResults = false;
-  recognition.lang = 'en-US';
+    // Initialize speech recognition if supported
+    function initializeSpeechRecognition() {
+      if ('webkitSpeechRecognition' in window) {
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
 
-  recognition.onstart = function() {
-    recognizing = true;
-    talkButton.innerHTML = '<i class="fas fa-stop"></i>';
-  };
+        recognition.onstart = () => {
+          recognizing = true;
+          updateTalkButtonText();
+        };
 
-  recognition.onend = function() {
-    recognizing = false;
-    updateTalkButtonText();
-  };
+        recognition.onend = () => {
+          recognizing = false;
+          updateTalkButtonText();
+        };
 
-  recognition.onresult = function(event) {
-    const transcript = event.results[0][0].transcript;
-    messageInput.value = transcript;
-    addMessage();
-  };
+        recognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          messageInput.value = transcript;
+          addMessage();
+        };
 
-  recognition.onerror = function(event) {
-    console.error('Speech recognition error:', event.error);
-  };
-} else {
-  talkButton.innerHTML = '<i class="fas fa-envelope"></i>';
-  talkButton.disabled = true;
-}
+        recognition.onerror = (event) => {
+          console.error('Speech recognition error:', event.error);
+        };
+      } else {
+        talkButton.innerHTML = '<i class="fas fa-envelope"></i>';
+        talkButton.disabled = true;
+      }
+    }
 
-menuButton.addEventListener('click', () => {
-  applet.classList.toggle('open');
-});
+    // Update the talk button text based on recognition state
+    function updateTalkButtonText() {
+      talkButton.innerHTML = recognizing ? '<i class="fas fa-stop"></i>' : 
+        (aiSpeechEnabled && 'webkitSpeechRecognition' in window ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-envelope"></i>');
+    }
 
-toggleMode.addEventListener('click', () => {
-  document.body.classList.toggle('dark-mode');
-  document.body.classList.toggle('light-mode');
-  isDarkMode = !isDarkMode;
-  const modeIcon = isDarkMode ? '<i class="fas fa-moon"></i>' : '<i class="fas fa-sun"></i>';
-  toggleMode.innerHTML = modeIcon;
-});
+    // Toggle the applet visibility
+    function toggleApplet() {
+      applet.classList.toggle('open');
+    }
 
-closeSettings.addEventListener('click', () => {
-  applet.classList.remove('open');
-});
+    // Save settings to local storage
+    function saveSettingsToLocalStorage() {
+      localStorage.setItem('selectedModel', selectedModel);
+      localStorage.setItem('apiKey', apiKey);
+      localStorage.setItem('userInfo', userInfo);
+      localStorage.setItem('responseInstructions', responseInstructions);
+      localStorage.setItem('aiSpeechEnabled', aiSpeechEnabled.toString());
+      localStorage.setItem('isDarkMode', isDarkMode);
+    }
 
-saveSettings.addEventListener('click', () => {
-  selectedModel = modelSelect.value;
-  apiKey = apiKeyInput.value;
-  userInfo = userInfoInput.value;
-  responseInstructions = responseInstructionsInput.value;
-  aiSpeechEnabled = aiSpeechToggle.checked;
+    // Add a message to the conversation
+    async function addMessage() {
+      const message = messageInput.value.trim();
+      if (message) {
+        appendUserMessage(message);
+        messageInput.value = '';
+        conversation.scrollTop = conversation.scrollHeight;
 
-  localStorage.setItem('selectedModel', selectedModel);
-  localStorage.setItem('apiKey', apiKey);
-  localStorage.setItem('userInfo', userInfo);
-  localStorage.setItem('responseInstructions', responseInstructions);
-  localStorage.setItem('aiSpeechEnabled', aiSpeechEnabled.toString());
-  localStorage.setItem('isDarkMode', isDarkMode);
+        const typingElement = createTypingIndicator();
+        conversation.appendChild(typingElement);
+        conversation.scrollTop = conversation.scrollHeight;
 
-  applet.classList.remove('open');
-});
+        try {
+          const aiMessageContent = await fetchAIResponse(message);
+          appendAIMessage(aiMessageContent);
+        } catch (error) {
+          appendErrorMessage(error.message);
+        } finally {
+          conversation.removeChild(typingElement);
+        }
+      }
+    }
 
-async function addMessage() {
-  const message = messageInput.value.trim();
-  if (message) {
-    const userMessageElement = document.createElement('div');
-    userMessageElement.classList.add('message', 'user-message');
-    userMessageElement.textContent = message;
-    addDeleteButton(userMessageElement); // Add delete button
-    conversation.appendChild(userMessageElement);
-    messageInput.value = '';
-    conversation.scrollTop = conversation.scrollHeight;
+    // Append user message to the conversation
+    function appendUserMessage(message) {
+      const userMessageElement = document.createElement('div');
+      userMessageElement.classList.add('message', 'user-message');
+      userMessageElement.textContent = message;
+      conversation.appendChild(userMessageElement);
+    }
 
-    const typingElement = document.createElement('div');
-    typingElement.classList.add('message', 'ai-message', 'typing-indicator');
-    typingElement.innerHTML = `
-      <span></span>
-      <span></span>
-      <span></span>
-    `;
-    conversation.appendChild(typingElement);
-    conversation.scrollTop = conversation.scrollHeight;
+    // Create typing indicator element
+    function createTypingIndicator() {
+      const typingElement = document.createElement('div');
+      typingElement.classList.add('message', 'ai-message', 'typing-indicator');
+      typingElement.innerHTML = `<span></span><span></span><span></span>`;
+      return typingElement;
+    }
 
-    try {
+    // Fetch AI response from the API
+    async function fetchAIResponse(message) {
       const payload = {
         model: selectedModel,
         messages: [
@@ -125,35 +135,15 @@ async function addMessage() {
       });
 
       const data = await response.json();
-      const aiMessageContent = data.choices[0].message.content.trim();
+      return data.choices[0].message.content.trim();
+    }
 
+    // Append AI message to the conversation
+    function appendAIMessage(aiMessageContent) {
       const aiMessageElement = document.createElement('div');
       aiMessageElement.classList.add('message', 'ai-message');
       aiMessageElement.innerHTML = marked.parse(aiMessageContent);
-
-      // Add copy button
-      const copyButton = document.createElement('button');
-      copyButton.innerHTML = '<i class="fas fa-copy"></i>';
-      copyButton.style.marginLeft = '10px';
-      copyButton.addEventListener('click', () => {
-        navigator.clipboard.writeText(aiMessageContent).then(() => {
-          alert('Response copied to clipboard');
-        });
-      });
-
-      // Add speak button
-      const speakButton = document.createElement('button');
-      speakButton.innerHTML = '<i class="fas fa-volume-up"></i>';
-      speakButton.style.marginLeft = '10px';
-      speakButton.addEventListener('click', () => {
-        const utterance = new SpeechSynthesisUtterance(aiMessageContent);
-        utterance.lang = 'en-US';
-        speechSynthesis.speak(utterance);
-      });
-
-      aiMessageElement.appendChild(copyButton);
-      aiMessageElement.appendChild(speakButton);
-      addDeleteButton(aiMessageElement); // Add delete button
+      addMessageButtons(aiMessageElement, aiMessageContent);
       conversation.appendChild(aiMessageElement);
       conversation.scrollTop = conversation.scrollHeight;
 
@@ -162,73 +152,123 @@ async function addMessage() {
         utterance.lang = 'en-US';
         speechSynthesis.speak(utterance);
       }
-    } catch (error) {
-      console.error('Error:', error);
+    }
+
+    // Add buttons to the AI message
+    function addMessageButtons(aiMessageElement, aiMessageContent) {
+      const buttonContainer = document.createElement('div');
+      buttonContainer.classList.add('button-container');
+
+      const copyButton = createButton('<i class="fas fa-copy"></i>', () => {
+        navigator.clipboard.writeText(aiMessageContent).then(() => {
+          alert('Response copied to clipboard');
+        });
+      });
+
+      const speakButton = createButton('<i class="fas fa-volume-up"></i>', () => {
+        const utterance = new SpeechSynthesisUtterance(aiMessageContent);
+        utterance.lang = 'en-US';
+        speechSynthesis.speak(utterance);
+      });
+
+      const deleteButton = createButton('<i class="fas fa-trash"></i>', () => {
+        conversation.removeChild(aiMessageElement);
+      });
+
+      buttonContainer.appendChild(copyButton);
+      buttonContainer.appendChild(speakButton);
+      buttonContainer.appendChild(deleteButton);
+      aiMessageElement.appendChild(buttonContainer);
+    }
+
+    // Create a button element
+    function createButton(innerHTML, onClick) {
+      const button = document.createElement('button');
+      button.innerHTML = innerHTML;
+      button.style.marginLeft = '10px';
+      button.addEventListener('click', onClick);
+      return button;
+    }
+
+    // Append error message to the conversation
+    function appendErrorMessage(errorMessage) {
       const errorMessageElement = document.createElement('div');
       errorMessageElement.classList.add('message', 'ai-message');
-      errorMessageElement.textContent = `Error: ${error.message}`;
-      addDeleteButton(errorMessageElement); // Add delete button
+      errorMessageElement.textContent = `Error: ${errorMessage}`;
       conversation.appendChild(errorMessageElement);
       conversation.scrollTop = conversation.scrollHeight;
     }
-    conversation.removeChild(typingElement);
-  }
-}
 
-// Function to add a delete button to a message element
-function addDeleteButton(messageElement) {
-  const deleteButton = document.createElement('button');
-  deleteButton.classList.add('delete-button');
-  deleteButton.innerHTML = '<i class="fas fa-times"></i>';
-  deleteButton.addEventListener('click', () => {
-    messageElement.remove();
-  });
-  messageElement.appendChild(deleteButton);
-}
+    // Toggle dark mode
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark-mode');
+      document.body.classList.toggle('light-mode');
+      isDarkMode = !isDarkMode;
+      const modeIcon = isDarkMode ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+      toggleMode.innerHTML = modeIcon;
+    }
 
-talkButton.addEventListener('click', () => {
-  if (recognizing) {
-    recognition.stop();
-  } else if (aiSpeechEnabled && 'webkitSpeechRecognition' in window) {
-    recognition.start();
-  }
-});
+    // Event listeners
+    menuButton.addEventListener('click', toggleApplet);
+    saveSettings.addEventListener('click', () => {
+      selectedModel = favoriteModelSelect.value === 'manual' ? manualModelInput.value : favoriteModelSelect.value;
+      apiKey = apiKeyInput.value;
+      userInfo = userInfoInput.value;
+      responseInstructions = responseInstructionsInput.value;
+      aiSpeechEnabled = aiSpeechToggle.checked;
+      saveSettingsToLocalStorage();
+      applet.classList.remove('open');
+    });
 
-messageInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
-    addMessage();
-  }
-});
+    favoriteModelSelect.addEventListener('change', () => {
+      manualModelInput.style.display = favoriteModelSelect.value === 'manual' ? 'block' : 'none';
+    });
 
-function updateTalkButtonText() {
-  talkButton.innerHTML = recognizing ? '<i class="fas fa-stop"></i>' : aiSpeechEnabled && 'webkitSpeechRecognition' in window ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-envelope"></i>';
-}
+    talkButton.addEventListener('click', () => {
+      if (recognizing) {
+        recognition.stop();
+      } else if (aiSpeechEnabled && 'webkitSpeechRecognition' in window) {
+        recognition.start();
+      }
+    });
 
-window.onload = () => {
-  selectedModel = localStorage.getItem('selectedModel') || 'deepseek/deepseek-r1-distill-llama-70b';
-  apiKey = localStorage.getItem('apiKey') || '';
-  userInfo = localStorage.getItem('userInfo') || '';
-  responseInstructions = localStorage.getItem('responseInstructions') || '';
-  aiSpeechEnabled = localStorage.getItem('aiSpeechEnabled') === 'true';
-  isDarkMode = localStorage.getItem('isDarkMode') === 'true';
+    messageInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        addMessage();
+      }
+    });
 
-  modelSelect.value = selectedModel;
-  apiKeyInput.value = apiKey;
-  userInfoInput.value = userInfo;
-  responseInstructionsInput.value = responseInstructions;
-  aiSpeechToggle.checked = aiSpeechEnabled;
+    toggleMode.addEventListener('click', toggleDarkMode);
 
-  if (isDarkMode) {
-    document.body.classList.add('dark-mode');
-    toggleMode.innerHTML = '<i class="fas fa-sun"></i>';
-  } else {
-    document.body.classList.add('light-mode');
-    toggleMode.innerHTML = '<i class="fas fa-moon"></i>';
-  }
+    // Initialize the application
+    function initializeApp() {
+      initializeSpeechRecognition();
+      loadSettingsFromLocalStorage();
+      updateTalkButtonText();
+    }
 
-  updateTalkButtonText();
-  if (!('webkitSpeechRecognition' in window)) {
-    talkButton.innerHTML = '<i class="fas fa-envelope"></i>';
-    talkButton.disabled = true;
-  }
-};
+    // Load settings from local storage
+    function loadSettingsFromLocalStorage() {
+      selectedModel = localStorage.getItem('selectedModel') || selectedModel;
+      apiKey = localStorage.getItem('apiKey') || '';
+      userInfo = localStorage.getItem('userInfo') || '';
+      responseInstructions = localStorage.getItem('responseInstructions') || '';
+      aiSpeechEnabled = localStorage.getItem('aiSpeechEnabled') === 'true';
+      isDarkMode = localStorage.getItem('isDarkMode') === 'true';
+
+      favoriteModelSelect.value = selectedModel;
+      apiKeyInput.value = apiKey;
+      userInfoInput.value = userInfo;
+      responseInstructionsInput.value = responseInstructions;
+      aiSpeechToggle.checked = aiSpeechEnabled;
+
+      if (isDarkMode) {
+        document.body.classList.add('dark-mode');
+        toggleMode.innerHTML = '<i class="fas fa-sun"></i>';
+      } else {
+        document.body.classList.add('light-mode');
+        toggleMode.innerHTML = '<i class="fas fa-moon"></i>';
+      }
+    }
+
+    window.onload = initializeApp;
